@@ -46,8 +46,23 @@ def required_documents(role: str) -> tuple[str, ...]:
         raise ValueError(f"unknown role: {role!r}") from None
 
 
-def outstanding(items: list[DocumentItem], today: date) -> list[str]:
-    """Labels for every document that still blocks the applicant."""
+def for_role(items: list[DocumentItem], role: str) -> list[DocumentItem]:
+    """Only the items the role requires.
+
+    A received document is kept on file when the role changes, so a profile
+    can hold items its current role no longer asks for. Those must not count.
+    """
+    required = required_documents(role)
+    return [item for item in items if item.doc_type in required]
+
+
+def outstanding(items: list[DocumentItem], today: date, role: str | None = None) -> list[str]:
+    """Labels for every document that still blocks the applicant.
+
+    With a role, items that role does not require are ignored.
+    """
+    if role is not None:
+        items = for_role(items, role)
     out = []
     for item in items:
         state = item.state(today)

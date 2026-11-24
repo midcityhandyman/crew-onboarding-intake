@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -57,7 +58,11 @@ class MockDestination:
 
 
 class HttpDestination:
-    """PUT {base_url}/pages/{key} with a bearer token. Optional, not used offline."""
+    """PUT {base_url}/pages/{key} with a bearer token.
+
+    Optional and generic. Tested against a local stub server only, never
+    against a real service.
+    """
 
     def __init__(self, base_url: str, api_key: str, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
@@ -76,14 +81,23 @@ class HttpDestination:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8") or "{}")
+                raw = resp.read()
         except urllib.error.HTTPError as exc:
-            if exc.code == 429 or exc.code >= 500:
+            if exc.code in (408, 429) or exc.code >= 500:
                 raise TransientError(f"HTTP {exc.code}") from exc
             raise PermanentError(f"HTTP {exc.code}") from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
-            raise TransientError(str(exc)) from exc
-        return str(body.get("id", key))
+        except (OSError, http.client.HTTPException) as exc:
+            # URLError, timeouts, resets and dropped connections all land here.
+            raise TransientError(str(exc) or type(exc).__name__) from exc
+        # The write succeeded. A body that is not a JSON object with an id
+        # is not an error: fall back to the page key.
+        try:
+            body = json.loads(raw.decode("utf-8") or "{}")
+        except ValueError:
+            return key
+        if isinstance(body, dict) and body.get("id"):
+            return str(body["id"])
+        return key
 
 
 def from_env(env: dict[str, str] | None = None) -> Destination:

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Callable
 
-from .checklist import outstanding
+from .checklist import for_role, outstanding
 from .destinations import Destination, PermanentError, TransientError
 from .store import Profile, Store, SyncRow
 
@@ -32,7 +32,7 @@ def page_key(profile: Profile) -> str:
 
 
 def build_page(store: Store, profile: Profile, today: date) -> dict:
-    docs = store.list_documents(profile.id)
+    docs = for_role(store.list_documents(profile.id), profile.role)
     missing = outstanding(docs, today)
     return {
         "name": profile.full_name,
@@ -94,6 +94,10 @@ def sync_profile(
             error = f"gave up after {attempts} attempts: {exc}"
             if attempts < max_attempts:
                 sleep(base_delay * 2 ** (attempts - 1))
+        except Exception as exc:  # noqa: BLE001
+            # A destination bug must flag this row, not abort the whole run.
+            error = f"unexpected error: {type(exc).__name__}: {exc}"
+            break
 
     store.save_sync_row(SyncRow(profile.id, digest, status, attempts, error, remote_id, now))
     action = "pushed" if status == SETTLED else "failed"

@@ -1,0 +1,6 @@
+[
+  {"full_name": "Alex Sample", "email": "alex.sample@example.com", "phone": "(555) 555-0101",
+   "role": "subcontractor", "trade": "drywall"},
+  {"full_name": "Casey Example", "email": "casey.example@example.com", "phone": "555-555-0102",
+   "role": "crew_member"}
+]

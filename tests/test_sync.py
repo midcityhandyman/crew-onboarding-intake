@@ -3,7 +3,7 @@ from datetime import date
 from conftest import NOW, TODAY, form
 from crew_intake import intake
 from crew_intake.destinations import HttpDestination, MockDestination, from_env
-from crew_intake.sync import FLAGGED, SETTLED, sync_all
+from crew_intake.sync import FLAGGED, SETTLED, build_page, sync_all
 
 
 def seed(store, n=1):
@@ -122,3 +122,29 @@ def test_from_env_defaults_to_mock_and_needs_both_values_for_http(tmp_path):
     assert isinstance(from_env(half), MockDestination)
     full = {"CREW_DEST_URL": "https://dest.example.com", "CREW_DEST_API_KEY": "placeholder"}
     assert isinstance(from_env(full), HttpDestination)
+
+
+def test_page_only_lists_documents_the_current_role_requires(store):
+    profile, _ = intake.submit(store, form(), NOW)
+    intake.receive_document(store, profile.id, "insurance_certificate", TODAY, date(2026, 1, 10))
+    profile, _ = intake.submit(store, form(role="crew_member"), NOW)
+    page = build_page(store, profile, TODAY)
+    assert [d["type"] for d in page["documents"]] == [
+        "emergency_contact", "id_verification", "tax_form_w4"
+    ]
+    assert not any("insurance" in m for m in page["missing"])
+
+
+def test_unexpected_destination_error_flags_the_row_and_the_run_continues(store):
+    class Broken:
+        def upsert_page(self, key, payload):
+            if key == "crew-0001":
+                raise RuntimeError("boom")
+            return "ok"
+
+    intake.submit(store, form(), NOW)
+    intake.submit(store, form(email="casey.example@example.com"), NOW)
+    first, second = sync_all(store, Broken(), TODAY, NOW, sleep=lambda s: None)
+    assert (first.status, first.attempts) == ("flagged", 1)
+    assert "unexpected error: RuntimeError: boom" in first.detail
+    assert second.status == "settled"

@@ -111,3 +111,39 @@ def test_document_not_on_checklist_is_refused(store):
     profile, _ = intake.submit(store, form(role="crew_member"), NOW)
     with pytest.raises(KeyError):
         intake.receive_document(store, profile.id, "tax_form_w9", TODAY)
+
+
+def test_null_fields_are_empty_not_the_text_none(store):
+    # A JSON null must not turn into the name "None" or the trade "none".
+    with pytest.raises(intake.ValidationError) as exc:
+        intake.submit(store, form(full_name=None), NOW)
+    assert "full_name is required" in exc.value.errors
+    with pytest.raises(intake.ValidationError) as exc:
+        intake.submit(store, form(role="licensed_trade", trade=None), NOW)
+    assert exc.value.errors == ["trade is required for licensed_trade"]
+    profile, _ = intake.submit(store, form(role="crew_member", trade=None), NOW)
+    assert profile.trade == ""
+
+
+def test_submission_that_is_not_an_object_is_rejected(store):
+    with pytest.raises(intake.ValidationError):
+        intake.submit(store, "Alex Sample", NOW)
+    assert store.list_profiles() == []
+
+
+def test_document_from_an_old_role_does_not_block_the_new_role(store):
+    profile, _ = intake.submit(store, form(), NOW)
+    # insurance certificate on file, already expired
+    intake.receive_document(store, profile.id, "insurance_certificate", TODAY, date(2026, 1, 10))
+    intake.submit(store, form(role="crew_member"), NOW)
+    for doc in ("tax_form_w4", "id_verification", "emergency_contact"):
+        intake.receive_document(store, profile.id, doc, TODAY)
+    # a crew member does not need insurance, so the expired one is ignored
+    assert intake.missing_documents(store, profile.id, TODAY) == []
+    row = intake.status_report(store, TODAY)[0]
+    assert row["ready"] is True and row["required"] == 3
+    # it is still on file, and counts again if the role goes back
+    intake.submit(store, form(), NOW)
+    assert "insurance_certificate (expired 2026-01-10)" in intake.missing_documents(
+        store, profile.id, TODAY
+    )

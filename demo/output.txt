@@ -1,0 +1,58 @@
+
+== 1. Form submissions ==
+created profile 1: Alex Sample (subcontractor) -> checklist: insurance_certificate, signed_agreement, tax_form_w9
+created profile 2: Casey Example (crew_member) -> checklist: emergency_contact, id_verification, tax_form_w4
+created profile 3: Jordan Placeholder (licensed_trade) -> checklist: insurance_certificate, signed_agreement, tax_form_w9, trade_license
+created profile 4: Riley Testcase (subcontractor) -> checklist: insurance_certificate, signed_agreement, tax_form_w9
+created profile 5: Morgan Fixture (licensed_trade) -> checklist: insurance_certificate, signed_agreement, tax_form_w9, trade_license
+rejected submission: full_name is required; email is not valid; phone must have 10 digits; role must be one of: crew_member, subcontractor, licensed_trade
+
+== 2. Documents arrive ==
+profile 1: received insurance_certificate (expires 2026-09-30)
+profile 1: received tax_form_w9
+profile 1: received signed_agreement
+profile 2: received tax_form_w4
+profile 3: received insurance_certificate (expires 2026-01-10)
+profile 3: received trade_license (expires 2027-03-01)
+profile 3: received tax_form_w9
+profile 5: received tax_form_w9
+
+== 3. What is missing (as of 2026-01-15) ==
+ID  NAME                ROLE            READY  MISSING
+1   Alex Sample         subcontractor   yes    none
+2   Casey Example       crew_member     no     emergency_contact, id_verification
+3   Jordan Placeholder  licensed_trade  no     insurance_certificate (expired 2026-01-10), signed_agreement
+4   Riley Testcase      subcontractor   no     insurance_certificate, signed_agreement, tax_form_w9
+5   Morgan Fixture      licensed_trade  no     insurance_certificate, signed_agreement, trade_license
+
+== 4. Sync run 1: destination misbehaves ==
+scripted: crew-0002 times out twice, crew-0003 is rejected, crew-0004 never answers
+PAGE       STATUS   ACTION   TRIES DETAIL
+crew-0001  settled  pushed   1
+crew-0002  settled  pushed   3
+crew-0003  flagged  failed   1     rejected: mock destination rejected the payload (422)
+crew-0004  flagged  failed   4     gave up after 4 attempts: mock destination timed out
+crew-0005  settled  pushed   1
+backoff delays requested (not actually slept in the demo): [0.5, 1.0, 0.5, 1.0, 2.0]
+pages at destination: ['crew-0001', 'crew-0002', 'crew-0005']
+
+== 5. Resubmission and one more document ==
+profile 2 resubmitted, created=False, phone now 555-555-0199
+profile 5: received signed_agreement
+
+== 6. Sync run 2: destination healthy ==
+PAGE       STATUS   ACTION   TRIES DETAIL
+crew-0001  settled  skipped  0     unchanged
+crew-0002  settled  pushed   1
+crew-0003  settled  pushed   1
+crew-0004  settled  pushed   1
+crew-0005  settled  pushed   1
+pages at destination: ['crew-0001', 'crew-0002', 'crew-0003', 'crew-0004', 'crew-0005']
+total destination calls across both runs: 14
+
+== 7. One synced crew page ==
+name: Jordan Placeholder
+role: licensed_trade
+trade: electrical
+ready_to_work: False
+missing: ['insurance_certificate (expired 2026-01-10)', 'signed_agreement']
